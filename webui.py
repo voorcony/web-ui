@@ -34,6 +34,8 @@ from src.controller.custom_controller import CustomController
 from gradio.themes import Citrus, Default, Glass, Monochrome, Ocean, Origin, Soft, Base
 from src.utils.default_config_settings import default_config, load_config_from_file, save_config_to_file, save_current_config, update_ui_from_config
 from src.utils.utils import update_model_dropdown, get_latest_files, capture_screenshot
+from src.browser.adspower_config import AdspowerConfig
+from src.browser.adspower_browser import AdspowerBrowser
 
 
 # Global variables for persistence
@@ -92,8 +94,12 @@ async def run_browser_agent(
         max_steps,
         use_vision,
         max_actions_per_step,
-        tool_calling_method
+        tool_calling_method,
+        use_adspower,
+        adspower_user_id
 ):
+    print(f"Debug - run_browser_agent - use_adspower: {use_adspower}")
+    print(f"Debug - run_browser_agent - adspower_user_id: {adspower_user_id}")
     global _global_agent_state
     _global_agent_state.clear_stop()  # Clear any previous stop requests
 
@@ -138,7 +144,9 @@ async def run_browser_agent(
                 max_steps=max_steps,
                 use_vision=use_vision,
                 max_actions_per_step=max_actions_per_step,
-                tool_calling_method=tool_calling_method
+                tool_calling_method=tool_calling_method,
+                use_adspower=use_adspower,
+                adspower_user_id=adspower_user_id
             )
         elif agent_type == "custom":
             final_result, errors, model_actions, model_thoughts, trace_file, history_file = await run_custom_agent(
@@ -157,7 +165,9 @@ async def run_browser_agent(
                 max_steps=max_steps,
                 use_vision=use_vision,
                 max_actions_per_step=max_actions_per_step,
-                tool_calling_method=tool_calling_method
+                tool_calling_method=tool_calling_method,
+                use_adspower=use_adspower,
+                adspower_user_id=adspower_user_id
             )
         else:
             raise ValueError(f"Invalid agent type: {agent_type}")
@@ -219,7 +229,9 @@ async def run_org_agent(
         max_steps,
         use_vision,
         max_actions_per_step,
-        tool_calling_method
+        tool_calling_method,
+        use_adspower=False,
+        adspower_user_id=None
 ):
     try:
         global _global_browser, _global_browser_context, _global_agent_state
@@ -228,25 +240,47 @@ async def run_org_agent(
         _global_agent_state.clear_stop()
 
         extra_chromium_args = [f"--window-size={window_w},{window_h}"]
-        if use_own_browser:
-            chrome_path = os.getenv("CHROME_PATH", None)
-            if chrome_path == "":
-                chrome_path = None
-            chrome_user_data = os.getenv("CHROME_USER_DATA", None)
-            if chrome_user_data:
-                extra_chromium_args += [f"--user-data-dir={chrome_user_data}"]
-        else:
-            chrome_path = None
-            
-        if _global_browser is None:
-            _global_browser = Browser(
-                config=BrowserConfig(
+        
+        # 添加调试日志
+        print(f"Debug - use_own_browser: {use_own_browser}")
+        print(f"Debug - use_adspower: {use_adspower}")
+        print(f"Debug - adspower_user_id: {adspower_user_id}")
+        
+        # 修改判断逻辑
+        if use_adspower and adspower_user_id:
+            print("Debug - Attempting to use Adspower browser")
+            if _global_browser is None:
+                adspower_config = AdspowerConfig(
+                    user_id=adspower_user_id,
                     headless=headless,
-                    disable_security=disable_security,
-                    chrome_instance_path=chrome_path,
-                    extra_chromium_args=extra_chromium_args,
+                    timeout=30000
                 )
-            )
+                _global_browser = AdspowerBrowser(adspower_config)
+                print("Debug - Created Adspower browser instance")
+                
+                # 对于 Adspower，我们使用其自带的上下文
+                _global_browser_context = (await _global_browser.launch_browser()).contexts()[0]
+        else:
+            print("Debug - Using default browser")
+            if use_own_browser:
+                chrome_path = os.getenv("CHROME_PATH", None)
+                if chrome_path == "":
+                    chrome_path = None
+                chrome_user_data = os.getenv("CHROME_USER_DATA", None)
+                if chrome_user_data:
+                    extra_chromium_args += [f"--user-data-dir={chrome_user_data}"]
+            else:
+                chrome_path = None
+                
+            if _global_browser is None:
+                _global_browser = Browser(
+                    config=BrowserConfig(
+                        headless=headless,
+                        disable_security=disable_security,
+                        chrome_instance_path=chrome_path,
+                        extra_chromium_args=extra_chromium_args,
+                    )
+                )
 
         if _global_browser_context is None:
             _global_browser_context = await _global_browser.new_context(
@@ -314,7 +348,9 @@ async def run_custom_agent(
         max_steps,
         use_vision,
         max_actions_per_step,
-        tool_calling_method
+        tool_calling_method,
+        use_adspower=False,
+        adspower_user_id=None
 ):
     try:
         global _global_browser, _global_browser_context, _global_agent_state
@@ -323,28 +359,49 @@ async def run_custom_agent(
         _global_agent_state.clear_stop()
 
         extra_chromium_args = [f"--window-size={window_w},{window_h}"]
-        if use_own_browser:
-            chrome_path = os.getenv("CHROME_PATH", None)
-            if chrome_path == "":
-                chrome_path = None
-            chrome_user_data = os.getenv("CHROME_USER_DATA", None)
-            if chrome_user_data:
-                extra_chromium_args += [f"--user-data-dir={chrome_user_data}"]
+        
+        # 添加调试日志
+        print(f"Debug - use_own_browser: {use_own_browser}")
+        print(f"Debug - use_adspower: {use_adspower}")
+        print(f"Debug - adspower_user_id: {adspower_user_id}")
+        
+        # 修改判断逻辑，与 run_org_agent 保持一致
+        if use_adspower and adspower_user_id:
+            print("Debug - Attempting to use Adspower browser")
+            if _global_browser is None:
+                adspower_config = AdspowerConfig(
+                    user_id=adspower_user_id,
+                    headless=headless,
+                    timeout=30000
+                )
+                _global_browser = AdspowerBrowser(adspower_config)
+                print("Debug - Created Adspower browser instance")
+                
+                # 对于 Adspower，我们使用其自带的上下文
+                _global_browser_context = (await _global_browser.launch_browser()).contexts()[0]
         else:
-            chrome_path = None
+            print("Debug - Using default browser")
+            if use_own_browser:
+                chrome_path = os.getenv("CHROME_PATH", None)
+                if chrome_path == "":
+                    chrome_path = None
+                chrome_user_data = os.getenv("CHROME_USER_DATA", None)
+                if chrome_user_data:
+                    extra_chromium_args += [f"--user-data-dir={chrome_user_data}"]
+            else:
+                chrome_path = None
+
+            if _global_browser is None:
+                _global_browser = CustomBrowser(
+                    config=BrowserConfig(
+                        headless=headless,
+                        disable_security=disable_security,
+                        chrome_instance_path=chrome_path,
+                        extra_chromium_args=extra_chromium_args,
+                    )
+                )
 
         controller = CustomController()
-
-        # Initialize global browser if needed
-        if _global_browser is None:
-            _global_browser = CustomBrowser(
-                config=BrowserConfig(
-                    headless=headless,
-                    disable_security=disable_security,
-                    chrome_instance_path=chrome_path,
-                    extra_chromium_args=extra_chromium_args,
-                )
-            )
 
         if _global_browser_context is None:
             _global_browser_context = await _global_browser.new_context(
@@ -424,7 +481,9 @@ async def run_with_stream(
     max_steps,
     use_vision,
     max_actions_per_step,
-    tool_calling_method
+    tool_calling_method,
+    use_adspower,
+    adspower_user_id
 ):
     global _global_agent_state
     stream_vw = 80
@@ -452,7 +511,9 @@ async def run_with_stream(
             max_steps=max_steps,
             use_vision=use_vision,
             max_actions_per_step=max_actions_per_step,
-            tool_calling_method=tool_calling_method
+            tool_calling_method=tool_calling_method,
+            use_adspower=use_adspower,
+            adspower_user_id=adspower_user_id
         )
         # Add HTML content at the start of the result array
         html_content = f"<h1 style='width:{stream_vw}vw; height:{stream_vh}vh'>Using browser...</h1>"
@@ -484,7 +545,9 @@ async def run_with_stream(
                     max_steps=max_steps,
                     use_vision=use_vision,
                     max_actions_per_step=max_actions_per_step,
-                    tool_calling_method=tool_calling_method
+                    tool_calling_method=tool_calling_method,
+                    use_adspower=use_adspower,
+                    adspower_user_id=adspower_user_id
                 )
             )
 
@@ -722,12 +785,12 @@ def create_ui(config, theme_name="Ocean"):
                     with gr.Row():
                         use_own_browser = gr.Checkbox(
                             label="Use Own Browser",
-                            value=config['use_own_browser'],
+                            value=config.get('use_own_browser', False),
                             info="Use your existing browser instance",
                         )
                         keep_browser_open = gr.Checkbox(
                             label="Keep Browser Open",
-                            value=config['keep_browser_open'],
+                            value=config.get('keep_browser_open', False),
                             info="Keep Browser Open between Tasks",
                         )
                         headless = gr.Checkbox(
@@ -781,6 +844,20 @@ def create_ui(config, theme_name="Ocean"):
                         info="Specify the directory where agent history should be saved.",
                         interactive=True,
                     )
+
+                    with gr.Row():
+                        use_adspower = gr.Checkbox(
+                            label="Use Adspower",
+                            value=config.get('use_adspower', False),
+                            info="Use Adspower browser profiles",
+                            interactive=True  # 确保可以交互
+                        )
+                        adspower_user_id = gr.Textbox(
+                            label="Adspower User ID",
+                            value=config.get('adspower_user_id', ''),
+                            info="ID of the Adspower browser profile",
+                            interactive=True  # 确保可以交互
+                        )
 
             with gr.TabItem("🤖 Run Agent", id=4):
                 task = gr.Textbox(
@@ -844,6 +921,8 @@ def create_ui(config, theme_name="Ocean"):
                         use_own_browser, keep_browser_open, headless, disable_security,
                         enable_recording, window_w, window_h, save_recording_path, save_trace_path,
                         save_agent_history_path, task,
+                        use_adspower,
+                        adspower_user_id,
                     ],  
                     outputs=[config_status]
                 )
@@ -891,7 +970,8 @@ def create_ui(config, theme_name="Ocean"):
                             agent_type, llm_provider, llm_model_name, llm_temperature, llm_base_url, llm_api_key,
                             use_own_browser, keep_browser_open, headless, disable_security, window_w, window_h,
                             save_recording_path, save_agent_history_path, save_trace_path,  # Include the new path
-                            enable_recording, task, add_infos, max_steps, use_vision, max_actions_per_step, tool_calling_method
+                            enable_recording, task, add_infos, max_steps, use_vision, max_actions_per_step, tool_calling_method,
+                            use_adspower, adspower_user_id
                         ],
                     outputs=[
                         browser_view,           # Browser view

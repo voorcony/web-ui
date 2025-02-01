@@ -290,54 +290,25 @@ class CustomAgent(Agent):
                 self._make_history_item(model_output, state, result)
 
     async def run(self, max_steps: int = 100) -> AgentHistoryList:
-        """Execute the task with maximum number of steps"""
+        """Run the agent until the task is complete or max_steps is reached"""
         try:
-            self._log_agent_run()
-
-            # Execute initial actions if provided
-            if self.initial_actions:
-                result = await self.controller.multi_act(self.initial_actions, self.browser_context, check_for_new_elements=False)
-                self._last_result = result
-
-            step_info = CustomAgentStepInfo(
-                task=self.task,
-                add_infos=self.add_infos,
-                step_number=1,
-                max_steps=max_steps,
-                memory="",
-                task_progress="",
-                future_plans=""
+            self.telemetry.capture(
+                AgentRunTelemetryEvent(
+                    agent_id=self.agent_id,
+                    task=self.task,
+                    model=self.model_name,
+                )
             )
 
-            for step in range(max_steps):
-                # 1) Check if stop requested
-                if self.agent_state and self.agent_state.is_stop_requested():
-                    logger.info("🛑 Stop requested by user")
-                    self._create_stop_history_item()
-                    break
-
-                # 2) Store last valid state before step
-                if self.browser_context and self.agent_state:
-                    state = await self.browser_context.get_state(use_vision=self.use_vision)
-                    self.agent_state.set_last_valid_state(state)
-
-                if self._too_many_failures():
-                    break
-
-                # 3) Do the step
-                await self.step(step_info)
-
-                if self.history.is_done():
-                    if (
-                            self.validate_output and step < max_steps - 1
-                    ):  # if last step, we dont need to validate
-                        if not await self._validate_output():
-                            continue
-
-                    logger.info("✅ Task completed successfully")
-                    break
-            else:
-                logger.info("❌ Failed to complete task in maximum steps")
+            while not self.history.is_done() and self.n_steps < max_steps:
+                try:
+                    await self.step()
+                except Exception as e:
+                    logger.error(f"Error in step: {str(e)}")
+                    self.history.add_error(str(e))
+                    if self.n_failures >= self.max_failures:
+                        break
+                    await asyncio.sleep(self.retry_delay)
 
             return self.history
 
@@ -352,11 +323,16 @@ class CustomAgent(Agent):
                 )
             )
 
+            # 只有在使用非 AdsPower 浏览器时才关闭浏览器
             if not self.injected_browser_context:
-                await self.browser_context.close()
+                from src.browser.adspower_browser import AdspowerBrowser
+                if not isinstance(self.browser, AdspowerBrowser):
+                    await self.browser_context.close()
 
             if not self.injected_browser and self.browser:
-                await self.browser.close()
+                from src.browser.adspower_browser import AdspowerBrowser
+                if not isinstance(self.browser, AdspowerBrowser):
+                    await self.browser.close()
 
             if self.generate_gif:
                 output_path: str = 'agent_history.gif'

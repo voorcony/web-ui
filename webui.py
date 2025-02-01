@@ -258,8 +258,18 @@ async def run_org_agent(
                 _global_browser = AdspowerBrowser(adspower_config)
                 print("Debug - Created Adspower browser instance")
                 
-                # 对于 Adspower，我们使用其自带的上下文
-                _global_browser_context = (await _global_browser.launch_browser()).contexts()[0]
+                # 创建新的上下文配置
+                context_config = BrowserContextConfig(
+                    trace_path=save_trace_path if save_trace_path else None,
+                    save_recording_path=save_recording_path if save_recording_path else None,
+                    no_viewport=False,
+                    browser_window_size=BrowserContextWindowSize(
+                        width=window_w, height=window_h
+                    ),
+                )
+                
+                # 使用 CustomBrowserContext
+                _global_browser_context = await _global_browser.new_context(config=context_config)
         else:
             print("Debug - Using default browser")
             if use_own_browser:
@@ -377,8 +387,18 @@ async def run_custom_agent(
                 _global_browser = AdspowerBrowser(adspower_config)
                 print("Debug - Created Adspower browser instance")
                 
-                # 对于 Adspower，我们使用其自带的上下文
-                _global_browser_context = (await _global_browser.launch_browser()).contexts()[0]
+                # 创建新的上下文配置
+                context_config = BrowserContextConfig(
+                    trace_path=save_trace_path if save_trace_path else None,
+                    save_recording_path=save_recording_path if save_recording_path else None,
+                    no_viewport=False,
+                    browser_window_size=BrowserContextWindowSize(
+                        width=window_w, height=window_h
+                    ),
+                )
+                
+                # 使用 CustomBrowserContext
+                _global_browser_context = await _global_browser.new_context(config=context_config)
         else:
             print("Debug - Using default browser")
             if use_own_browser:
